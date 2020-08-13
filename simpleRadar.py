@@ -8,15 +8,11 @@ import cantools
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
-def database(filename):
-    db = cantools.database.Database()
-    with open (filename, 'r') as fin:
-        db.add_dbc_string(fin.read())
-    return db
+import liveTools as lt
 
 #direct the database function to your DBC file
-db2 = database('RAV4.dbc')
+db2 = lt.database('RAV4.dbc')
+p = lt.connectPanda()
 
 TURN_SIGNALS = 1556
 RADAR = [385,386,387,388,389,390,391,392,393,394,395,396,397,398,399]
@@ -24,7 +20,6 @@ GEAR = 956
 
 colors = np.random.rand(1000,3)#random colors for plots
 
-p = Panda() #create panda object
 tstart = time.time() #reference start time
 num_plots = 0
 
@@ -43,6 +38,8 @@ brake = 0
 gear = ''
 turnSignal = ''
 steer = 0
+leadDist = 0
+
 
 #initialize figure
 fig,ax = plt.subplots()
@@ -54,12 +51,17 @@ plt.show(block=False)
 line, = ax.plot(lat,lon,marker='.',markersize = 15)
 line2, = ax.plot(lat100[-15:-2],lon100[-15:-2],marker='.',ls = '',markersize = 10)
 line3, = ax.plot(lat100[-30:-15],lon100[-30:-15],marker='.',ls='',markersize = 5)
+line4, = ax.plot(0,leadDist,marker='.',ls = '',markersize = 10)
 
+noneCount = 0
+totalCount = 0
 try:
     while True:
-        can_recv = p.can_recv()
-        if can_recv != []:
+        if p != 0:
+            can_recv = p.can_recv()
             for addr, _, msg, src  in can_recv:
+                if addr == 869:
+                    leadDist = list(db2.decode_message(addr,msg).values())[6]
                 if addr in RADAR: #get data and timestamp of radar measurement
                     #if that decoded radar message fits all of the .lon .lat
                     lat = list(db2.decode_message(addr,msg).values())[2] #latitude
@@ -73,8 +75,18 @@ try:
                 if addr == GEAR:
                     gear = list(db2.decode_message(addr,msg).values())[0]
                 if addr == 37:
-                    steer = list(db2.decode_message(addr,msg).values())[0]
-        else:
+                    steer =  list(db2.decode_message(addr,msg).values())[0]
+
+
+            # cluster = 0#lt.getClusteredRadar(p)
+            # if cluster[1] != None:
+            #     clead = cluster[0][1]
+            # else:
+            #     clead = None
+            #     noneCount += 1
+             # totalCount += 1
+
+        elif p == 0:
             #fake data added when not connected to a vehicle
             lon = np.random.randint(10)
             lat = np.random.randint(10)
@@ -94,23 +106,27 @@ try:
                 lat100 = lat100[-50:]
                 lon100 = lon100[-50:]
 
-        # line, = ax.plot(lat,lon,marker='.',markersize = 15)
-        line.set_xdata(lat)
-        line.set_ydata(lon) #USING set_data IS FASTER than plt.plot()
-        # line2, = ax.plot(lat100[-15:-2],lon100[-15:-2],marker='.',ls = '',markersize = 10)
-        line2.set_xdata(lat100[-15:-2])
-        line2.set_ydata(lon100[-15:-2])
-        # line3, = ax.plot(lat100[-50:-15],lon100[-50:-15],marker='.',ls='',markersize = 5)
-        line3.set_xdata(lat100[-50:-15])
-        line3.set_ydata(lon100[-50:-15])
+        line, = ax.plot(lat,lon,marker='.',markersize = 15)
+        # line.set_xdata(lat)
+        # line.set_ydata(lon) #USING set_data IS FASTER than plt.plot()
+        line2, = ax.plot(lat100[-15:-2],lon100[-15:-2],marker='.',ls = '',markersize = 10)
+        # line2.set_xdata(lat100[-15:-2])
+        # line2.set_ydata(lon100[-15:-2])
+        line3, = ax.plot(lat100[-50:-15],lon100[-50:-15],marker='.',ls='',markersize = 5)
+        # line3.set_xdata(lat100[-50:-15])
+        # line3.set_ydata(lon100[-50:-15])
+
+        line4.set_ydata(leadDist)
+        fig.legend((line, line4), ('Low Level Radar', '869 Lead Dist'))
 
         ax.set_xlim([-width,width])
         ax.set_ylim([0,depth])
-        ax.draw_artist(ax.patch)
-        ax.draw_artist(line)
-        ax.draw_artist(line2)
-        ax.draw_artist(line3)
-        fig.canvas.update()
+        # ax.draw_artist(ax.patch)
+        # ax.draw_artist(line)
+        # ax.draw_artist(line2)
+        # ax.draw_artist(line3)
+        # ax.draw_artist(line4)
+        # fig.canvas.update()
         fig.canvas.flush_events()
 
         num_plots += 1
@@ -120,6 +136,7 @@ try:
             tstart = time.time()
             num_plots = 0
 
-        print(round(fps,0),'Turn Signal: ', turnSignal,'Brake: ', brake,'Gear: ',gear,'Steering: ',steer, end='\r')
+        print('Lead Dist: ',lon,leadDist,'Cluster: ', turnSignal,'Brake: ', brake,'Steering: ',steer, end='\r')
 except KeyboardInterrupt:
     print('\n Logging Ended')
+    # print(noneCount/totalCount)
